@@ -444,51 +444,18 @@ async def admin_page():
         return HTMLResponse(f.read())
 
 
-# 用户管理页面路由
-@app.get('/user_management.html', response_class=HTMLResponse)
-async def user_management_page():
-    page_path = os.path.join(static_dir, 'user_management.html')
-    if os.path.exists(page_path):
-        with open(page_path, 'r', encoding='utf-8') as f:
-            return HTMLResponse(f.read())
-    else:
-        return HTMLResponse('<h3>User management page not found</h3>')
-
-
-# 日志管理页面路由
-@app.get('/log_management.html', response_class=HTMLResponse)
-async def log_management_page():
-    page_path = os.path.join(static_dir, 'log_management.html')
-    if os.path.exists(page_path):
-        with open(page_path, 'r', encoding='utf-8') as f:
-            return HTMLResponse(f.read())
-    else:
-        return HTMLResponse('<h3>Log management page not found</h3>')
-
-
-# 数据管理页面路由
-@app.get('/data_management.html', response_class=HTMLResponse)
-async def data_management_page():
-    page_path = os.path.join(static_dir, 'data_management.html')
-    if os.path.exists(page_path):
-        with open(page_path, 'r', encoding='utf-8') as f:
-            return HTMLResponse(f.read())
-    else:
-        return HTMLResponse('<h3>Data management page not found</h3>')
 
 
 
 
 
-# 商品搜索页面路由
-@app.get('/item_search.html', response_class=HTMLResponse)
-async def item_search_page():
-    page_path = os.path.join(static_dir, 'item_search.html')
-    if os.path.exists(page_path):
-        with open(page_path, 'r', encoding='utf-8') as f:
-            return HTMLResponse(f.read())
-    else:
-        return HTMLResponse('<h3>Item search page not found</h3>')
+
+
+
+
+
+
+
 
 
 # 登录接口
@@ -1535,7 +1502,32 @@ def get_registration_status():
         return {'enabled': True, 'message': '注册功能已开启'}  # 出错时默认开启
 
 
+@app.get('/login-info-status')
+def get_login_info_status():
+    """获取默认登录信息显示状态（公开接口，无需认证）"""
+    from db_manager import db_manager
+    try:
+        enabled_str = db_manager.get_system_setting('show_default_login_info')
+        logger.debug(f"从数据库获取的登录信息显示设置值: '{enabled_str}'")
+
+        # 如果设置不存在，默认为开启
+        if enabled_str is None:
+            enabled_bool = True
+        else:
+            enabled_bool = enabled_str == 'true'
+
+        return {"enabled": enabled_bool}
+    except Exception as e:
+        logger.error(f"获取登录信息显示状态失败: {e}")
+        # 出错时默认为开启
+        return {"enabled": True}
+
+
 class RegistrationSettingUpdate(BaseModel):
+    enabled: bool
+
+
+class LoginInfoSettingUpdate(BaseModel):
     enabled: bool
 
 
@@ -1565,6 +1557,31 @@ def update_registration_settings(setting_data: RegistrationSettingUpdate, admin_
         logger.error(f"更新注册设置失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.put('/login-info-settings')
+def update_login_info_settings(setting_data: LoginInfoSettingUpdate, admin_user: Dict[str, Any] = Depends(require_admin)):
+    """更新默认登录信息显示设置（仅管理员）"""
+    from db_manager import db_manager
+    try:
+        enabled = setting_data.enabled
+        success = db_manager.set_system_setting(
+            'show_default_login_info',
+            'true' if enabled else 'false',
+            '是否显示默认登录信息'
+        )
+        if success:
+            log_with_user('info', f"更新登录信息显示设置: {'开启' if enabled else '关闭'}", admin_user)
+            return {
+                'success': True,
+                'enabled': enabled,
+                'message': f"默认登录信息显示已{'开启' if enabled else '关闭'}"
+            }
+        else:
+            raise HTTPException(status_code=500, detail='更新登录信息显示设置失败')
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新登录信息显示设置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 
@@ -2883,32 +2900,6 @@ async def search_multiple_pages(
         logger.error(f"{user_info} 多页商品搜索失败: {error_msg}")
         raise HTTPException(status_code=500, detail=f"多页商品搜索失败: {error_msg}")
 
-
-@app.get("/items/detail/{item_id}")
-async def get_public_item_detail(
-    item_id: str,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)
-):
-    """获取公开商品详情（通过外部API）"""
-    try:
-        from utils.item_search import get_item_detail_from_api
-
-        # 从外部API获取商品详情
-        detail = await get_item_detail_from_api(item_id)
-
-        if detail:
-            return {
-                "success": True,
-                "data": detail
-            }
-        else:
-            raise HTTPException(status_code=404, detail="商品详情获取失败")
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"获取商品详情失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"获取商品详情失败: {str(e)}")
 
 
 @app.get("/items/cookie/{cookie_id}")
