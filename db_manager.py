@@ -354,7 +354,7 @@ class DBManager:
             CREATE TABLE IF NOT EXISTS notification_channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                type TEXT NOT NULL CHECK (type IN ('qq')),
+                type TEXT NOT NULL CHECK (type IN ('qq','ding_talk','dingtalk','feishu','lark','bark','email','webhook','wechat','telegram')),
                 config TEXT NOT NULL,
                 enabled BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -414,7 +414,8 @@ class DBManager:
             ('smtp_password', '', 'SMTP登录密码/授权码'),
             ('smtp_from', '', '发件人显示名（留空则使用用户名）'),
             ('smtp_use_tls', 'true', '是否启用TLS'),
-            ('smtp_use_ssl', 'false', '是否启用SSL')
+            ('smtp_use_ssl', 'false', '是否启用SSL'),
+            ('qq_reply_secret_key', 'xianyu_qq_reply_2024', 'QQ回复消息API秘钥')
             ''')
 
             # 检查并升级数据库
@@ -567,6 +568,14 @@ class DBManager:
                 self.upgrade_keywords_table_for_image_support(cursor)
                 self.set_system_setting("db_version", "1.3", "数据库版本号")
                 logger.info("数据库升级到版本1.3完成")
+            
+            
+            # 升级到版本1.4 - 添加关键词类型和图片URL字段
+            if current_version < "1.4":
+                logger.info("开始升级数据库到版本1.4...")
+                self.upgrade_notification_channels_types(cursor)
+                self.set_system_setting("db_version", "1.4", "数据库版本号")
+                logger.info("数据库升级到版本1.4完成")
 
             # 迁移遗留数据（在所有版本升级完成后执行）
             self.migrate_legacy_data(cursor)
@@ -803,13 +812,13 @@ class DBManager:
                 existing_data = cursor.fetchall()
                 logger.info(f"备份 {count} 条通知渠道数据")
 
-            # 创建新表，支持更多渠道类型
+            # 创建新表，支持所有通知渠道类型
             cursor.execute('''
             CREATE TABLE notification_channels_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 user_id INTEGER NOT NULL,
-                type TEXT NOT NULL CHECK (type IN ('qq','ding_talk','dingtalk','email','webhook','wechat','telegram')),
+                type TEXT NOT NULL CHECK (type IN ('qq','ding_talk','dingtalk','feishu','lark','bark','email','webhook','wechat','telegram')),
                 config TEXT NOT NULL,
                 enabled BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -824,15 +833,18 @@ class DBManager:
                     # 处理类型映射，支持更多渠道类型
                     old_type = row[3] if len(row) > 3 else 'qq'  # type字段
 
-                    # 扩展的类型映射规则
+                    # 完整的类型映射规则，支持所有通知渠道
                     type_mapping = {
                         'ding_talk': 'dingtalk',  # 统一为dingtalk
                         'dingtalk': 'dingtalk',
                         'qq': 'qq',
-                        'email': 'email',  # 现在支持email
-                        'webhook': 'webhook',  # 现在支持webhook
-                        'wechat': 'wechat',  # 现在支持wechat
-                        'telegram': 'telegram'  # 现在支持telegram
+                        'feishu': 'feishu',      # 飞书通知
+                        'lark': 'lark',          # 飞书通知（英文名）
+                        'bark': 'bark',          # Bark通知
+                        'email': 'email',        # 邮件通知
+                        'webhook': 'webhook',    # Webhook通知
+                        'wechat': 'wechat',      # 微信通知
+                        'telegram': 'telegram'   # Telegram通知
                     }
 
                     new_type = type_mapping.get(old_type, 'qq')  # 默认为qq
@@ -863,6 +875,15 @@ class DBManager:
             cursor.execute("ALTER TABLE notification_channels_new RENAME TO notification_channels")
 
             logger.info("notification_channels表类型升级完成")
+            logger.info("✅ 现在支持以下所有通知渠道类型:")
+            logger.info("   - qq (QQ通知)")
+            logger.info("   - ding_talk/dingtalk (钉钉通知)")
+            logger.info("   - feishu/lark (飞书通知)")
+            logger.info("   - bark (Bark通知)")
+            logger.info("   - email (邮件通知)")
+            logger.info("   - webhook (Webhook通知)")
+            logger.info("   - wechat (微信通知)")
+            logger.info("   - telegram (Telegram通知)")
             return True
         except Exception as e:
             logger.error(f"升级notification_channels表类型失败: {e}")
@@ -1190,7 +1211,7 @@ class DBManager:
                         'user_id': result[2],
                         'auto_confirm': bool(result[3]),
                         'remark': result[4] or '',
-                        'pause_duration': result[5] or 10,
+                        'pause_duration': result[5] if result[5] is not None else 10,  # 0是有效值，表示不暂停
                         'created_at': result[6]
                     }
                 return None
@@ -1245,11 +1266,19 @@ class DBManager:
                 self._execute_sql(cursor, "SELECT pause_duration FROM cookies WHERE id = ?", (cookie_id,))
                 result = cursor.fetchone()
                 if result:
-                    return result[0] or 10  # 默认10分钟
-                return 10  # 如果没有找到记录，返回默认值
+                    if result[0] is None:
+                        logger.warning(f"账号 {cookie_id} 的pause_duration为NULL，使用默认值10分钟并修复数据库")
+                        # 修复数据库中的NULL值
+                        self._execute_sql(cursor, "UPDATE cookies SET pause_duration = 10 WHERE id = ?", (cookie_id,))
+                        self.conn.commit()
+                        return 10
+                    return result[0]  # 返回实际值，包括0（0表示不暂停）
+                else:
+                    logger.warning(f"账号 {cookie_id} 未找到记录，使用默认值10分钟")
+                    return 10
             except Exception as e:
                 logger.error(f"获取账号自动回复暂停时间失败: {e}")
-                return 10  # 出错时返回默认值
+                return 10
 
     def get_auto_confirm(self, cookie_id: str) -> bool:
         """获取Cookie的自动确认发货设置"""
@@ -1310,6 +1339,29 @@ class DBManager:
             try:
                 cursor = self.conn.cursor()
 
+                # 检查是否与现有图片关键词冲突
+                for keyword, reply, item_id in keywords:
+                    normalized_item_id = item_id if item_id and item_id.strip() else None
+
+                    # 检查是否存在同名的图片关键词
+                    if normalized_item_id:
+                        # 有商品ID的情况：检查 (cookie_id, keyword, item_id) 是否存在图片关键词
+                        self._execute_sql(cursor,
+                            "SELECT type FROM keywords WHERE cookie_id = ? AND keyword = ? AND item_id = ? AND type = 'image'",
+                            (cookie_id, keyword, normalized_item_id))
+                    else:
+                        # 通用关键词的情况：检查 (cookie_id, keyword) 是否存在图片关键词
+                        self._execute_sql(cursor,
+                            "SELECT type FROM keywords WHERE cookie_id = ? AND keyword = ? AND (item_id IS NULL OR item_id = '') AND type = 'image'",
+                            (cookie_id, keyword))
+
+                    if cursor.fetchone():
+                        # 存在同名图片关键词，抛出友好的错误信息
+                        item_desc = f"商品ID: {normalized_item_id}" if normalized_item_id else "通用关键词"
+                        error_msg = f"关键词 '{keyword}' （{item_desc}） 已存在（图片关键词），无法保存为文本关键词"
+                        logger.warning(f"文本关键词与图片关键词冲突: Cookie={cookie_id}, 关键词='{keyword}', {item_desc}")
+                        raise ValueError(error_msg)
+
                 # 只删除该cookie_id的文本类型关键字，保留图片关键词
                 self._execute_sql(cursor,
                     "DELETE FROM keywords WHERE cookie_id = ? AND (type IS NULL OR type = 'text')",
@@ -1320,22 +1372,15 @@ class DBManager:
                     # 标准化item_id：空字符串转为NULL
                     normalized_item_id = item_id if item_id and item_id.strip() else None
 
-                    try:
-                        self._execute_sql(cursor,
-                            "INSERT INTO keywords (cookie_id, keyword, reply, item_id, type) VALUES (?, ?, ?, ?, 'text')",
-                            (cookie_id, keyword, reply, normalized_item_id))
-                    except sqlite3.IntegrityError as ie:
-                        # 如果遇到唯一约束冲突，记录详细错误信息并回滚
-                        item_desc = f"商品ID: {normalized_item_id}" if normalized_item_id else "通用关键词"
-                        logger.error(f"关键词唯一约束冲突: Cookie={cookie_id}, 关键词='{keyword}', {item_desc}")
-                        self.conn.rollback()
-                        raise ie
+                    self._execute_sql(cursor,
+                        "INSERT INTO keywords (cookie_id, keyword, reply, item_id, type) VALUES (?, ?, ?, ?, 'text')",
+                        (cookie_id, keyword, reply, normalized_item_id))
 
                 self.conn.commit()
                 logger.info(f"文本关键字保存成功: {cookie_id}, {len(keywords)}条，图片关键词已保留")
                 return True
-            except sqlite3.IntegrityError:
-                # 唯一约束冲突，重新抛出异常让上层处理
+            except ValueError:
+                # 重新抛出友好的错误信息
                 raise
             except Exception as e:
                 logger.error(f"文本关键字保存失败: {e}")

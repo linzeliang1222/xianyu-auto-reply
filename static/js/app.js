@@ -233,7 +233,7 @@ async function loadDashboard() {
 async function loadOrdersCount() {
     try {
         const token = localStorage.getItem('auth_token');
-        const response = await fetch('/admin/data/orders', {
+        const response = await fetch('/api/orders', {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -702,7 +702,13 @@ async function addKeyword() {
     }
 
     // 检查关键词是否已存在（考虑商品ID，检查所有类型的关键词）
-    const allKeywords = keywordsData[currentCookieId] || [];
+    // 在编辑模式下，需要排除正在编辑的关键词本身
+    let allKeywords = keywordsData[currentCookieId] || [];
+    if (isEditMode && typeof window.editingIndex !== 'undefined') {
+        // 创建一个副本，排除正在编辑的关键词
+        allKeywords = allKeywords.filter((item, index) => index !== window.editingIndex);
+    }
+
     const existingKeyword = allKeywords.find(item =>
         item.keyword === keyword &&
         (item.item_id || '') === (itemId || '')
@@ -1269,8 +1275,8 @@ async function loadCookies() {
         </td>
         <td class="align-middle">
             <div class="pause-duration-cell" data-cookie-id="${cookie.id}">
-                <span class="pause-duration-display" onclick="editPauseDuration('${cookie.id}', ${cookie.pause_duration || 10})" title="点击编辑暂停时间" style="cursor: pointer; color: #6c757d; font-size: 0.875rem;">
-                    <i class="bi bi-clock me-1"></i>${cookie.pause_duration || 10}分钟
+                <span class="pause-duration-display" onclick="editPauseDuration('${cookie.id}', ${cookie.pause_duration !== undefined ? cookie.pause_duration : 10})" title="点击编辑暂停时间" style="cursor: pointer; color: #6c757d; font-size: 0.875rem;">
+                    <i class="bi bi-clock me-1"></i>${cookie.pause_duration === 0 ? '不暂停' : (cookie.pause_duration || 10) + '分钟'}
                 </span>
             </div>
         </td>
@@ -1345,6 +1351,157 @@ function copyCookie(id, value) {
     }
     document.body.removeChild(textArea);
     });
+}
+
+// 刷新真实Cookie
+async function refreshRealCookie(cookieId) {
+    if (!cookieId) {
+        showToast('缺少账号ID', 'warning');
+        return;
+    }
+
+    // 获取当前cookie值
+    try {
+        const cookieDetails = await fetchJSON(`${apiBase}/cookies/details`);
+        const currentCookie = cookieDetails.find(c => c.id === cookieId);
+
+        if (!currentCookie || !currentCookie.value) {
+            showToast('未找到有效的Cookie信息', 'warning');
+            return;
+        }
+
+        // 确认操作
+        if (!confirm(`确定要刷新账号 "${cookieId}" 的真实Cookie吗？\n\n此操作将使用当前Cookie访问闲鱼IM界面获取最新的真实Cookie。`)) {
+            return;
+        }
+
+        // 显示加载状态
+        const button = event.target.closest('button');
+        const originalContent = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i>';
+
+        // 调用刷新API
+        const response = await fetch(`${apiBase}/qr-login/refresh-cookies`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                qr_cookies: currentCookie.value,
+                cookie_id: cookieId
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showToast(`账号 "${cookieId}" 真实Cookie刷新成功`, 'success');
+            // 刷新账号列表以显示更新后的cookie
+            loadCookies();
+        } else {
+            showToast(`真实Cookie刷新失败: ${result.message}`, 'danger');
+        }
+
+    } catch (error) {
+        console.error('刷新真实Cookie失败:', error);
+        showToast(`刷新真实Cookie失败: ${error.message || '未知错误'}`, 'danger');
+    } finally {
+        // 恢复按钮状态
+        const button = event.target.closest('button');
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+        }
+    }
+}
+
+// 显示冷却状态
+async function showCooldownStatus(cookieId) {
+    if (!cookieId) {
+        showToast('缺少账号ID', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/qr-login/cooldown-status/${cookieId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            const { remaining_time, cooldown_duration, is_in_cooldown, remaining_minutes, remaining_seconds } = result;
+
+            let statusMessage = `账号: ${cookieId}\n`;
+            statusMessage += `冷却时长: ${cooldown_duration / 60}分钟\n`;
+
+            if (is_in_cooldown) {
+                statusMessage += `冷却状态: 进行中\n`;
+                statusMessage += `剩余时间: ${remaining_minutes}分${remaining_seconds}秒\n\n`;
+                statusMessage += `在冷却期间，_refresh_cookies_via_browser 方法将被跳过。\n\n`;
+                statusMessage += `是否要重置冷却时间？`;
+
+                if (confirm(statusMessage)) {
+                    await resetCooldownTime(cookieId);
+                }
+            } else {
+                statusMessage += `冷却状态: 无冷却\n`;
+                statusMessage += `可以正常执行 _refresh_cookies_via_browser 方法`;
+                alert(statusMessage);
+            }
+        } else {
+            showToast(`获取冷却状态失败: ${result.message}`, 'danger');
+        }
+
+    } catch (error) {
+        console.error('获取冷却状态失败:', error);
+        showToast(`获取冷却状态失败: ${error.message || '未知错误'}`, 'danger');
+    }
+}
+
+// 重置冷却时间
+async function resetCooldownTime(cookieId) {
+    if (!cookieId) {
+        showToast('缺少账号ID', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${apiBase}/qr-login/reset-cooldown/${cookieId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            const previousTime = result.previous_remaining_time || 0;
+            const previousMinutes = Math.floor(previousTime / 60);
+            const previousSeconds = previousTime % 60;
+
+            let message = `账号 "${cookieId}" 的扫码登录冷却时间已重置`;
+            if (previousTime > 0) {
+                message += `\n原剩余时间: ${previousMinutes}分${previousSeconds}秒`;
+            }
+
+            showToast(message, 'success');
+        } else {
+            showToast(`重置冷却时间失败: ${result.message}`, 'danger');
+        }
+
+    } catch (error) {
+        console.error('重置冷却时间失败:', error);
+        showToast(`重置冷却时间失败: ${error.message || '未知错误'}`, 'danger');
+    }
 }
 
 // 删除Cookie
@@ -1752,6 +1909,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 首先检查认证状态
     const isAuthenticated = await checkAuth();
     if (!isAuthenticated) return;
+
+    // 加载系统版本号
+    loadSystemVersion();
+    // 启动项目使用人数定时刷新
+    startProjectUsersRefresh();
     // 添加Cookie表单提交
     document.getElementById('addForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2450,6 +2612,78 @@ const channelTypeConfigs = {
         }
     ]
     },
+    feishu: {
+    title: '飞书通知',
+    description: '请设置飞书机器人Webhook URL，支持自定义机器人和群机器人',
+    icon: 'bi-chat-square-text-fill',
+    color: 'warning',
+    fields: [
+        {
+        id: 'webhook_url',
+        label: '飞书机器人Webhook URL',
+        type: 'url',
+        placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/...',
+        required: true,
+        help: '飞书机器人的Webhook地址'
+        },
+        {
+        id: 'secret',
+        label: '签名密钥（可选）',
+        type: 'text',
+        placeholder: '输入签名密钥',
+        required: false,
+        help: '如果机器人开启了签名验证，请填写密钥'
+        }
+    ]
+    },
+    bark: {
+    title: 'Bark通知',
+    description: 'iOS推送通知服务，支持自建服务器和官方服务器',
+    icon: 'bi-phone-fill',
+    color: 'dark',
+    fields: [
+        {
+        id: 'device_key',
+        label: '设备密钥',
+        type: 'text',
+        placeholder: '输入Bark设备密钥',
+        required: true,
+        help: 'Bark应用中显示的设备密钥'
+        },
+        {
+        id: 'server_url',
+        label: '服务器地址（可选）',
+        type: 'url',
+        placeholder: 'https://api.day.app',
+        required: false,
+        help: '自建Bark服务器地址，留空使用官方服务器'
+        },
+        {
+        id: 'title',
+        label: '通知标题（可选）',
+        type: 'text',
+        placeholder: '闲鱼自动回复通知',
+        required: false,
+        help: '推送通知的标题'
+        },
+        {
+        id: 'sound',
+        label: '提示音（可选）',
+        type: 'text',
+        placeholder: 'default',
+        required: false,
+        help: '通知提示音，如：alarm, anticipate, bell等'
+        },
+        {
+        id: 'group',
+        label: '分组（可选）',
+        type: 'text',
+        placeholder: 'xianyu',
+        required: false,
+        help: '通知分组名称，用于归类消息'
+        }
+    ]
+    },
     email: {
     title: '邮件通知',
     description: '通过SMTP服务器发送邮件通知，支持各种邮箱服务商',
@@ -2753,6 +2987,8 @@ function renderNotificationChannels(channels) {
     let channelType = channel.type;
     if (channelType === 'ding_talk') {
         channelType = 'dingtalk';  // 兼容旧的类型名
+    } else if (channelType === 'lark') {
+        channelType = 'feishu';  // 兼容lark类型名
     }
     const typeConfig = channelTypeConfigs[channelType];
     const typeDisplay = typeConfig ? typeConfig.title : channel.type;
@@ -2867,6 +3103,8 @@ async function editNotificationChannel(channelId) {
     let channelType = channel.type;
     if (channelType === 'ding_talk') {
         channelType = 'dingtalk';  // 兼容旧的类型名
+    } else if (channelType === 'lark') {
+        channelType = 'feishu';  // 兼容lark类型名
     }
 
     const config = channelTypeConfigs[channelType];
@@ -2891,6 +3129,10 @@ async function editNotificationChannel(channelId) {
         configData = { qq_number: channel.config };
         } else if (channel.type === 'dingtalk' || channel.type === 'ding_talk') {
         configData = { webhook_url: channel.config };
+        } else if (channel.type === 'feishu' || channel.type === 'lark') {
+        configData = { webhook_url: channel.config };
+        } else if (channel.type === 'bark') {
+        configData = { device_key: channel.config };
         } else {
         configData = { config: channel.config };
         }
@@ -3985,9 +4227,8 @@ function renderDeliveryRulesList(rules) {
         </div>
         </td>
         <td>${cardTypeBadge}</td>
-        <td>
-        <span class="badge bg-info">${rule.delivery_count || 1}</span>
-        </td>
+        <!-- 隐藏发货数量列 -->
+        <!-- <td><span class="badge bg-info">${rule.delivery_count || 1}</span></td> -->
         <td>${statusBadge}</td>
         <td>
         <span class="badge bg-warning">${rule.delivery_times || 0}</span>
@@ -4096,7 +4337,7 @@ async function saveDeliveryRule() {
     try {
     const keyword = document.getElementById('productKeyword').value;
     const cardId = document.getElementById('selectedCard').value;
-    const deliveryCount = document.getElementById('deliveryCount').value;
+    const deliveryCount = document.getElementById('deliveryCount').value || 1;
     const enabled = document.getElementById('ruleEnabled').checked;
     const description = document.getElementById('ruleDescription').value;
 
@@ -4553,7 +4794,7 @@ async function updateDeliveryRule() {
     const ruleId = document.getElementById('editRuleId').value;
     const keyword = document.getElementById('editProductKeyword').value;
     const cardId = document.getElementById('editSelectedCard').value;
-    const deliveryCount = document.getElementById('editDeliveryCount').value;
+    const deliveryCount = document.getElementById('editDeliveryCount').value || 1;
     const enabled = document.getElementById('editRuleEnabled').checked;
     const description = document.getElementById('editRuleDescription').value;
 
@@ -5883,7 +6124,12 @@ function updateBatchDeleteButton() {
 // 格式化日期时间
 function formatDateTime(dateString) {
     if (!dateString) return '未知';
-    const date = new Date(dateString);
+    // 如果是ISO格式，直接new Date
+    if (dateString.includes('T') && dateString.endsWith('Z')) {
+        return new Date(dateString).toLocaleString('zh-CN');
+    }
+    // 否则按原有逻辑（可选：补偿8小时）
+    const date = new Date(dateString.replace(' ', 'T') + 'Z');
     return date.toLocaleString('zh-CN');
 }
 
@@ -6927,6 +7173,16 @@ async function checkQRCodeStatus() {
             clearQRCodeCheck();
             showVerificationRequired(data);
             break;
+        case 'processing':
+            document.getElementById('statusText').textContent = '正在处理中...';
+            // 继续轮询，不清理检查
+            break;
+        case 'already_processed':
+            document.getElementById('statusText').textContent = '登录已完成';
+            document.getElementById('statusSpinner').style.display = 'none';
+            clearQRCodeCheck();
+            showToast('该扫码会话已处理完成', 'info');
+            break;
         }
     }
     } catch (error) {
@@ -6990,12 +7246,37 @@ function showVerificationRequired(data) {
 // 处理扫码成功
 function handleQRCodeSuccess(data) {
     if (data.account_info) {
-    const { account_id, is_new_account } = data.account_info;
+    const { account_id, is_new_account, real_cookie_refreshed, fallback_reason, cookie_length } = data.account_info;
 
+    // 构建成功消息
+    let successMessage = '';
     if (is_new_account) {
-        showToast(`新账号添加成功！账号ID: ${account_id}`, 'success');
+        successMessage = `新账号添加成功！账号ID: ${account_id}`;
     } else {
-        showToast(`账号Cookie已更新！账号ID: ${account_id}`, 'success');
+        successMessage = `账号Cookie已更新！账号ID: ${account_id}`;
+    }
+
+    // 添加cookie长度信息
+    if (cookie_length) {
+        successMessage += `\nCookie长度: ${cookie_length}`;
+    }
+
+    // 添加真实cookie获取状态信息
+    if (real_cookie_refreshed === true) {
+        successMessage += '\n✅ 真实Cookie获取并保存成功';
+        document.getElementById('statusText').textContent = '登录成功！真实Cookie已获取并保存';
+        showToast(successMessage, 'success');
+    } else if (real_cookie_refreshed === false) {
+        successMessage += '\n⚠️ 真实Cookie获取失败，已保存原始扫码Cookie';
+        if (fallback_reason) {
+            successMessage += `\n原因: ${fallback_reason}`;
+        }
+        document.getElementById('statusText').textContent = '登录成功，但使用原始Cookie';
+        showToast(successMessage, 'warning');
+    } else {
+        // 兼容旧版本，没有真实cookie刷新信息
+        document.getElementById('statusText').textContent = '登录成功！';
+        showToast(successMessage, 'success');
     }
 
     // 关闭模态框
@@ -7005,7 +7286,7 @@ function handleQRCodeSuccess(data) {
 
         // 刷新账号列表
         loadCookies();
-    }, 2000);
+    }, 3000); // 延长显示时间以便用户看到详细信息
     }
 }
 
@@ -7523,16 +7804,16 @@ function editPauseDuration(cookieId, currentDuration) {
     const input = document.createElement('input');
     input.type = 'number';
     input.className = 'form-control form-control-sm';
-    input.value = currentDuration || 10;
+    input.value = currentDuration !== undefined ? currentDuration : 10;
     input.placeholder = '请输入暂停时间...';
     input.style.fontSize = '0.875rem';
-    input.min = 1;
+    input.min = 0;
     input.max = 60;
     input.step = 1;
 
     // 保存原始内容和原始值
     const originalContent = pauseCell.innerHTML;
-    const originalValue = currentDuration || 10;
+    const originalValue = currentDuration !== undefined ? currentDuration : 10;
 
     // 标记是否已经进行了编辑
     let hasChanged = false;
@@ -7544,7 +7825,7 @@ function editPauseDuration(cookieId, currentDuration) {
 
     // 监听输入变化
     input.addEventListener('input', () => {
-        const newValue = parseInt(input.value) || 10;
+        const newValue = input.value === '' ? 10 : parseInt(input.value);
         hasChanged = newValue !== originalValue;
     });
 
@@ -7553,12 +7834,12 @@ function editPauseDuration(cookieId, currentDuration) {
         console.log('savePauseDuration called, isProcessing:', isProcessing, 'hasChanged:', hasChanged); // 调试信息
         if (isProcessing) return; // 防止重复调用
 
-        const newDuration = parseInt(input.value) || 10;
+        const newDuration = input.value === '' ? 10 : parseInt(input.value);
         console.log('newDuration:', newDuration, 'originalValue:', originalValue); // 调试信息
 
         // 验证范围
-        if (newDuration < 1 || newDuration > 60) {
-            showToast('暂停时间必须在1-60分钟之间', 'warning');
+        if (isNaN(newDuration) || newDuration < 0 || newDuration > 60) {
+            showToast('暂停时间必须在0-60分钟之间（0表示不暂停）', 'warning');
             input.focus();
             return;
         }
@@ -7586,7 +7867,7 @@ function editPauseDuration(cookieId, currentDuration) {
                 // 更新显示
                 pauseCell.innerHTML = `
                     <span class="pause-duration-display" onclick="editPauseDuration('${cookieId}', ${newDuration})" title="点击编辑暂停时间" style="cursor: pointer; color: #6c757d; font-size: 0.875rem;">
-                        <i class="bi bi-clock me-1"></i>${newDuration}分钟
+                        <i class="bi bi-clock me-1"></i>${newDuration === 0 ? '不暂停' : newDuration + '分钟'}
                     </span>
                 `;
                 showToast('暂停时间更新成功', 'success');
@@ -7664,18 +7945,28 @@ async function loadSystemSettings() {
 
             console.log('用户信息:', result, '是否管理员:', isAdmin);
 
-            // 显示/隐藏注册设置和外发配置（仅管理员可见）
+            // 显示/隐藏管理员专用设置（仅管理员可见）
+            const apiSecuritySettings = document.getElementById('api-security-settings');
             const registrationSettings = document.getElementById('registration-settings');
             const outgoingConfigs = document.getElementById('outgoing-configs');
+            const backupManagement = document.getElementById('backup-management');
+
+            if (apiSecuritySettings) {
+                apiSecuritySettings.style.display = isAdmin ? 'block' : 'none';
+            }
             if (registrationSettings) {
                 registrationSettings.style.display = isAdmin ? 'block' : 'none';
             }
             if (outgoingConfigs) {
                 outgoingConfigs.style.display = isAdmin ? 'block' : 'none';
             }
+            if (backupManagement) {
+                backupManagement.style.display = isAdmin ? 'block' : 'none';
+            }
 
-            // 如果是管理员，加载注册设置、登录信息设置和外发配置
+            // 如果是管理员，加载所有管理员设置
             if (isAdmin) {
+                await loadAPISecuritySettings();
                 await loadRegistrationSettings();
                 await loadLoginInfoSettings();
                 await loadOutgoingConfigs();
@@ -7688,6 +7979,115 @@ async function loadSystemSettings() {
         if (registrationSettings) {
             registrationSettings.style.display = 'none';
         }
+    }
+}
+
+// 加载API安全设置
+async function loadAPISecuritySettings() {
+    try {
+        const response = await fetch('/system-settings', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+
+        if (response.ok) {
+            const settings = await response.json();
+
+            // 加载QQ回复消息秘钥
+            const qqReplySecretKey = settings.qq_reply_secret_key || '';
+            const qqReplySecretKeyInput = document.getElementById('qqReplySecretKey');
+            if (qqReplySecretKeyInput) {
+                qqReplySecretKeyInput.value = qqReplySecretKey;
+            }
+        }
+    } catch (error) {
+        console.error('加载API安全设置失败:', error);
+        showToast('加载API安全设置失败', 'danger');
+    }
+}
+
+// 切换密码可见性
+function togglePasswordVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    const icon = document.getElementById(inputId + '-icon');
+
+    if (input && icon) {
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    }
+}
+
+// 生成随机秘钥
+function generateRandomSecretKey() {
+    // 生成32位随机字符串
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = 'xianyu_qq_';
+    for (let i = 0; i < 24; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const qqReplySecretKeyInput = document.getElementById('qqReplySecretKey');
+    if (qqReplySecretKeyInput) {
+        qqReplySecretKeyInput.value = result;
+        showToast('随机秘钥已生成', 'success');
+    }
+}
+
+// 更新QQ回复消息秘钥
+async function updateQQReplySecretKey() {
+    const qqReplySecretKey = document.getElementById('qqReplySecretKey').value.trim();
+
+    if (!qqReplySecretKey) {
+        showToast('请输入QQ回复消息API秘钥', 'warning');
+        return;
+    }
+
+    if (qqReplySecretKey.length < 8) {
+        showToast('秘钥长度至少需要8位字符', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch('/system-settings/qq_reply_secret_key', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                value: qqReplySecretKey,
+                description: 'QQ回复消息API秘钥'
+            })
+        });
+
+        if (response.ok) {
+            showToast('QQ回复消息API秘钥更新成功', 'success');
+
+            // 显示状态信息
+            const statusDiv = document.getElementById('qqReplySecretStatus');
+            const statusText = document.getElementById('qqReplySecretStatusText');
+            if (statusDiv && statusText) {
+                statusText.textContent = `秘钥已更新，长度: ${qqReplySecretKey.length} 位`;
+                statusDiv.style.display = 'block';
+
+                // 3秒后隐藏状态
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            }
+        } else {
+            const errorData = await response.json();
+            showToast(`更新失败: ${errorData.detail || '未知错误'}`, 'danger');
+        }
+    } catch (error) {
+        console.error('更新QQ回复消息秘钥失败:', error);
+        showToast('更新QQ回复消息秘钥失败', 'danger');
     }
 }
 
@@ -8035,7 +8435,7 @@ async function loadOrderCookieFilter() {
 // 加载所有订单
 async function loadAllOrders() {
     try {
-        const response = await fetch(`${apiBase}/admin/data/orders`, {
+        const response = await fetch(`${apiBase}/api/orders`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
@@ -8068,7 +8468,7 @@ async function loadOrdersByCookie() {
     }
 
     try {
-        const response = await fetch(`${apiBase}/admin/data/orders`, {
+        const response = await fetch(`${apiBase}/api/orders`, {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
@@ -8625,23 +9025,6 @@ function updateBatchDeleteOrdersButton() {
     }
 }
 
-// 格式化日期时间
-function formatDateTime(dateString) {
-    if (!dateString) return '未知时间';
-
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch (error) {
-        return dateString;
-    }
-}
 
 // 页面加载完成后初始化订单搜索功能
 document.addEventListener('DOMContentLoaded', function() {
@@ -9747,3 +10130,330 @@ function exportSearchResults() {
         showToast('导出搜索结果失败', 'danger');
     }
 }
+
+// ================================
+// 版本管理功能
+// ================================
+
+/**
+ * 加载项目使用人数
+ */
+async function loadProjectUsers() {
+    try {
+        const response = await fetch('http://xianyu.zhinianblog.cn/?action=stats');
+        const result = await response.json();
+
+        if (result.error) {
+            console.error('获取项目使用人数失败:', result.error);
+            document.getElementById('totalUsers').textContent = '获取失败';
+            return;
+        }
+
+        const totalUsers = result.total_users || 0;
+        document.getElementById('totalUsers').textContent = totalUsers;
+
+        // 如果用户数量大于0，可以添加一些视觉效果
+        if (totalUsers > 0) {
+            const usersElement = document.getElementById('projectUsers');
+            usersElement.classList.remove('bg-primary');
+            usersElement.classList.add('bg-success');
+        }
+
+    } catch (error) {
+        console.error('获取项目使用人数失败:', error);
+        document.getElementById('totalUsers').textContent = '网络错误';
+    }
+}
+
+/**
+ * 启动项目使用人数定时刷新
+ */
+function startProjectUsersRefresh() {
+    // 立即加载一次
+    loadProjectUsers();
+
+    // 每5分钟刷新一次
+    setInterval(() => {
+        loadProjectUsers();
+    }, 5 * 60 * 1000); // 5分钟 = 5 * 60 * 1000毫秒
+}
+
+/**
+ * 显示项目详细统计信息
+ */
+async function showProjectStats() {
+    try {
+        const response = await fetch('http://xianyu.zhinianblog.cn/?action=stats');
+        const data = await response.json();
+
+        if (data.error) {
+            showToast('获取统计信息失败: ' + data.error, 'danger');
+            return;
+        }
+
+        // 创建模态框HTML
+        const modalHtml = `
+            <div class="modal fade" id="projectStatsModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title">
+                                <i class="bi bi-bar-chart me-2"></i>项目使用统计
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="row mb-4">
+                                <div class="col-md-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <div class="h2 text-primary mb-1">${data.total_users || 0}</div>
+                                        <div class="text-muted">总用户数</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <div class="h2 text-success mb-1">${data.daily_active_users || 0}</div>
+                                        <div class="text-muted">今日活跃</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <div class="h2 text-info mb-1">${Object.keys(data.os_distribution || {}).length}</div>
+                                        <div class="text-muted">操作系统类型</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="text-center p-3 bg-light rounded">
+                                        <div class="h2 text-warning mb-1">${Object.keys(data.version_distribution || {}).length}</div>
+                                        <div class="text-muted">版本类型</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><i class="bi bi-laptop me-2"></i>操作系统分布</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            ${Object.entries(data.os_distribution || {}).map(([os, count]) => `
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span>${os}</span>
+                                                    <span class="badge bg-primary">${count}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><i class="bi bi-tag me-2"></i>版本分布</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            ${Object.entries(data.version_distribution || {}).map(([version, count]) => `
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span>${version}</span>
+                                                    <span class="badge bg-success">${count}</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mt-3 text-muted text-center">
+                                <small>最后更新: ${data.last_updated || '未知'}</small>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                            <button type="button" class="btn btn-primary" onclick="loadProjectUsers()">刷新数据</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // 移除已存在的模态框
+        const existingModal = document.getElementById('projectStatsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        // 添加新模态框到页面
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('projectStatsModal'));
+        modal.show();
+
+        // 模态框关闭后移除DOM元素
+        document.getElementById('projectStatsModal').addEventListener('hidden.bs.modal', function () {
+            this.remove();
+        });
+
+    } catch (error) {
+        console.error('获取项目统计失败:', error);
+        showToast('获取项目统计失败: ' + error.message, 'danger');
+    }
+}
+
+/**
+ * 加载系统版本号并检查更新
+ */
+async function loadSystemVersion() {
+    try {
+        // 从 version.txt 文件读取当前系统版本
+        let currentSystemVersion = 'v1.0.0'; // 默认版本
+
+        try {
+            const versionResponse = await fetch('/static/version.txt');
+            if (versionResponse.ok) {
+                currentSystemVersion = (await versionResponse.text()).trim();
+            }
+        } catch (e) {
+            console.warn('无法读取本地版本文件，使用默认版本');
+        }
+
+        // 显示当前版本
+        document.getElementById('versionNumber').textContent = currentSystemVersion;
+
+        // 获取远程版本并检查更新
+        const response = await fetch('http://xianyu.zhinianblog.cn/index.php?action=getVersion');
+        const result = await response.json();
+
+        if (result.error) {
+            console.error('获取版本号失败:', result.message);
+            return;
+        }
+
+        const remoteVersion = result.data;
+
+        // 检查是否有更新
+        if (remoteVersion !== currentSystemVersion) {
+            showUpdateAvailable(remoteVersion);
+        }
+
+    } catch (error) {
+        console.error('获取版本号失败:', error);
+        document.getElementById('versionNumber').textContent = '未知';
+    }
+}
+
+/**
+ * 显示有更新标签
+ */
+function showUpdateAvailable(newVersion) {
+    const versionContainer = document.querySelector('.version-info');
+
+    if (!versionContainer) {
+        return;
+    }
+
+    // 检查是否已经有更新标签
+    if (versionContainer.querySelector('.update-badge')) {
+        return;
+    }
+
+    // 创建更新标签
+    const updateBadge = document.createElement('span');
+    updateBadge.className = 'badge bg-warning ms-2 update-badge';
+    updateBadge.style.cursor = 'pointer';
+    updateBadge.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>有更新';
+    updateBadge.title = `新版本 ${newVersion} 可用，点击查看更新内容`;
+
+    // 点击事件
+    updateBadge.onclick = () => showUpdateInfo(newVersion);
+
+    // 添加到版本信息容器
+    versionContainer.appendChild(updateBadge);
+}
+
+/**
+ * 获取更新信息
+ */
+async function getUpdateInfo() {
+    try {
+        const response = await fetch('http://xianyu.zhinianblog.cn/index.php?action=getUpdateInfo');
+        const result = await response.json();
+
+        if (result.error) {
+            showToast('获取更新信息失败: ' + result.message, 'danger');
+            return null;
+        }
+
+        return result.data;
+
+    } catch (error) {
+        console.error('获取更新信息失败:', error);
+        showToast('获取更新信息失败', 'danger');
+        return null;
+    }
+}
+
+/**
+ * 显示更新信息（点击"有更新"标签时调用）
+ */
+async function showUpdateInfo(newVersion) {
+    const updateInfo = await getUpdateInfo();
+    if (!updateInfo) return;
+
+    let updateList = '';
+    if (updateInfo.updates && updateInfo.updates.length > 0) {
+        updateList = updateInfo.updates.map(item => `<li class="mb-2">${item}</li>`).join('');
+    }
+
+    const modalHtml = `
+        <div class="modal fade" id="updateModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <i class="bi bi-arrow-up-circle me-2"></i>版本更新内容
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>发现新版本！</strong>以下是最新版本的更新内容。
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-tag me-1"></i>最新版本</h6>
+                                <p class="fs-4 text-success fw-bold">${updateInfo.version}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <h6><i class="bi bi-calendar me-1"></i>发布日期</h6>
+                                <p class="text-muted">${updateInfo.releaseDate || '未知'}</p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6><i class="bi bi-list-ul me-1"></i>更新内容</h6>
+                        ${updateList ? `<ul class="list-unstyled ps-3">${updateList}</ul>` : '<p class="text-muted">暂无更新内容</p>'}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 移除已存在的模态框
+    const existingModal = document.getElementById('updateModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    // 添加新的模态框
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('updateModal'));
+    modal.show();
+}
+
+

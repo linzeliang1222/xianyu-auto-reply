@@ -1,13 +1,38 @@
-# 🐟 闲鱼自动回复系统  （另外提供cursor pro 14天试用账号，物美价廉，欢迎联系）
+# 🐟 闲鱼自动回复系统
 
 [![GitHub](https://img.shields.io/badge/GitHub-zhinianboke%2Fxianyu--auto--reply-blue?logo=github)](https://github.com/zhinianboke/xianyu-auto-reply)
 [![Docker](https://img.shields.io/badge/Docker-一键部署-blue?logo=docker)](https://github.com/zhinianboke/xianyu-auto-reply#-快速开始)
 [![Python](https://img.shields.io/badge/Python-3.11+-green?logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-仅供学习-red.svg)](#️-版权声明与使用条款)
 
+## 最新代码获取地址（尽量转存）
+
+https://pan.baidu.com/s/1I6muOGJQYd6y3oxQSmtvrQ?pwd=gcpd
+
+## 📋 项目概述
+
+一个功能完整的闲鱼自动回复和管理系统，采用现代化的技术架构，支持多用户、多账号管理，具备智能回复、自动发货、自动确认发货、商品管理等企业级功能。系统基于Python异步编程，使用FastAPI提供RESTful API，SQLite数据库存储，支持Docker一键部署。
+
 > **⚠️ 重要提示：本项目仅供学习研究使用，严禁商业用途！使用前请仔细阅读[版权声明](#️-版权声明与使用条款)。**
 
-一个功能完整的闲鱼自动回复和管理系统，支持多用户、多账号管理，具备智能回复、自动发货、自动确认发货、商品管理等企业级功能。
+## 🏗️ 技术架构
+
+### 核心技术栈
+- **后端框架**: FastAPI + Python 3.11+ 异步编程
+- **数据库**: SQLite 3 + 多用户数据隔离 + 自动迁移
+- **前端**: Bootstrap 5 + Vanilla JavaScript + 响应式设计
+- **通信协议**: WebSocket + RESTful API + 实时通信
+- **部署方式**: Docker + Docker Compose + 一键部署
+- **日志系统**: Loguru + 文件轮转 + 实时收集
+- **安全认证**: JWT + 图形验证码 + 邮箱验证 + 权限控制
+
+### 系统架构特点
+- **微服务设计**: 模块化架构，易于维护和扩展
+- **异步处理**: 基于asyncio的高性能异步处理
+- **多用户隔离**: 完全的数据隔离和权限控制
+- **容器化部署**: Docker容器化，支持一键部署
+- **实时监控**: WebSocket实时通信和状态监控
+- **自动化运维**: 自动重连、异常恢复、日志轮转
 
 ## ✨ 核心特性
 
@@ -99,23 +124,19 @@ xianyu-auto-reply/
 │       ├── xianyu_utils.py        # 闲鱼API工具函数（加密、签名、解析）
 │       ├── message_utils.py       # 消息格式化和处理工具
 │       ├── ws_utils.py            # WebSocket客户端封装
-│       ├── qr_login.py            # 二维码登录功能
+│       ├── image_utils.py         # 图片处理和管理工具
+│       ├── image_uploader.py      # 图片上传到闲鱼CDN
+│       ├── image_utils.py         # 图片处理工具（压缩、格式转换）
 │       ├── item_search.py         # 商品搜索功能（基于Playwright，无头模式）
 │       ├── order_detail_fetcher.py # 订单详情获取工具
-│       ├── image_utils.py         # 图片处理工具（压缩、格式转换）
-│       └── image_uploader.py      # 图片上传到CDN工具
+│       └── qr_login.py            # 二维码登录功能
 ├── 🌐 前端界面
 │   └── static/
 │       ├── index.html             # 主管理界面（集成所有功能模块）
 │       ├── login.html             # 用户登录页面
 │       ├── register.html          # 用户注册页面（邮箱验证）
-│       ├── user_management.html   # 用户管理页面（管理员功能）
-│       ├── data_management.html   # 数据管理页面（导入导出）
-│       ├── log_management.html    # 日志管理页面（实时日志查看）
-│       ├── item_search.html       # 商品搜索页面（独立版本）
 │       ├── js/
-│       │   ├── app.js             # 主要JavaScript逻辑
-│       │   └── modules/           # 模块化JavaScript文件
+│       │   └── app.js             # 主要JavaScript逻辑和所有功能模块
 │       ├── css/
 │       │   ├── variables.css      # CSS变量定义
 │       │   ├── layout.css         # 布局样式
@@ -137,16 +158,23 @@ xianyu-auto-reply/
 │       ├── wechat-group.png       # 微信群二维码
 │       └── qq-group.png           # QQ群二维码
 ├── 🐳 Docker部署
-│   ├── Dockerfile                 # Docker镜像构建文件
+│   ├── Dockerfile                 # Docker镜像构建文件（优化版）
+│   ├── Dockerfile-cn             # 国内优化版Docker镜像构建文件
 │   ├── docker-compose.yml        # Docker Compose一键部署配置
+│   ├── docker-compose-cn.yml     # 国内优化版Docker Compose配置
 │   ├── docker-deploy.sh          # Docker部署管理脚本（Linux/macOS）
 │   ├── docker-deploy.bat         # Docker部署管理脚本（Windows）
-│   └── entrypoint.sh              # Docker容器启动脚本
+│   ├── entrypoint.sh              # Docker容器启动脚本
+│   └── .dockerignore             # Docker构建忽略文件
+├── 🌐 Nginx配置
+│   └── nginx/
+│       ├── nginx.conf            # Nginx反向代理配置
+│       └── ssl/                  # SSL证书目录
 ├── 📋 配置文件
 │   ├── global_config.yml         # 全局配置文件（WebSocket、API等）
-│   ├── requirements.txt          # Python依赖包列表（精简版）
-│   ├── .gitignore                # Git忽略文件配置
-│   └── README.md                 # 项目说明文档
+│   ├── requirements.txt          # Python依赖包列表（精简版，无内置模块）
+│   ├── .gitignore                # Git忽略文件配置（完整版）
+│   └── README.md                 # 项目说明文档（本文件）
 └── 📊 数据目录（运行时创建）
     ├── data/                     # 数据目录（Docker挂载）
     │   └── xianyu_data.db        # SQLite数据库文件
@@ -171,7 +199,7 @@ docker run -d \
   -p 8080:8080 \
   -v $PWD/xianyu-auto-reply/:/app/data/ \
   --name xianyu-auto-reply \
-  registry.cn-shanghai.aliyuncs.com/zhinian-software/xianyu-auto-reply:1.0
+  registry.cn-shanghai.aliyuncs.com/zhinian-software/xianyu-auto-reply:1.0.2
 
 # 3. 访问系统
 # http://localhost:8080
@@ -336,7 +364,7 @@ python Start.py
 - **多重安全验证** - 超级加密保护，防止误操作和数据泄露
 - **批量处理能力** - 支持批量确认发货，提高处理效率
 - **异常处理机制** - 完善的错误处理和重试机制，确保发货成功
-- **多渠道通知** - 支持QQ、钉钉、邮件等多种发货通知方式
+- **多渠道通知** - 支持QQ、钉钉、飞书、Bark、邮件等多种发货通知方式
 
 ### 👥 多用户系统
 - **用户注册登录** - 支持邮箱验证和图形验证码，安全可靠
@@ -360,10 +388,11 @@ python Start.py
 - **账号状态验证** - 自动检查cookies启用状态，确保搜索功能正常
 
 ### 📱 通知系统
-- **多渠道支持** - QQ、钉钉、邮件、微信、Telegram等6种通知方式
+- **多渠道支持** - QQ、钉钉、飞书、Bark、邮件、微信、Telegram等8种通知方式
 - **智能配置** - 可视化配置界面，支持复杂参数和加密设置
 - **实时推送** - 重要事件实时通知，及时了解系统状态
 - **通知模板** - 自定义通知内容和格式，个性化消息推送
+- **移动端支持** - Bark iOS推送，随时随地接收通知
 
 ### 🔐 安全特性
 - **Cookie安全管理** - 加密存储用户凭证，定期自动刷新
@@ -407,30 +436,27 @@ python Start.py
 - **`image_uploader.py`** - 图片上传工具，支持多种CDN服务商、自动压缩、格式优化、批量上传
 
 ### 🌐 前端界面 (`static/`)
-- **`index.html`** - 主管理界面，包含账号管理、关键词管理、系统监控、实时状态显示
+- **`index.html`** - 主管理界面，集成所有功能模块：账号管理、关键词管理、商品管理、发货管理、系统监控、用户管理等
 - **`login.html`** - 用户登录页面，支持图形验证码、记住登录状态、多重安全验证
 - **`register.html`** - 用户注册页面，支持邮箱验证码、实时验证、密码强度检测
-- **`user_management.html`** - 用户管理页面，管理员专用，用户增删改查、权限管理
-- **`data_management.html`** - 数据管理页面，支持Excel导入导出、数据备份、批量操作
-- **`log_management.html`** - 日志管理页面，实时日志查看、日志搜索过滤、日志下载
-- **`item_search.html`** - 商品搜索页面，获取真实闲鱼商品数据，支持多条件搜索
-- **`js/app.js`** - 主要JavaScript逻辑，处理前端交互、API调用、实时更新
-- **`css/`** - 模块化样式文件，包含布局、组件、主题等分类样式，响应式设计
+- **`js/app.js`** - 主要JavaScript逻辑，包含所有功能模块：前端交互、API调用、实时更新、数据管理、用户界面控制
+- **`css/`** - 模块化样式文件，包含布局、组件、主题等分类样式，响应式设计，支持明暗主题切换
 - **`xianyu_js_version_2.js`** - 闲鱼JavaScript工具库，加密解密、数据处理、API封装
-- **`lib/`** - 前端依赖库，包含Bootstrap、jQuery、Chart.js等第三方库
+- **`lib/`** - 前端依赖库，包含Bootstrap 5、Bootstrap Icons等第三方库
+- **`uploads/images/`** - 图片上传目录，支持发货图片和其他媒体文件存储
 
 ### 🐳 部署配置
-- **`Dockerfile`** - Docker镜像构建文件，包含Python环境、Playwright浏览器、系统依赖，支持无头模式运行
-- **`docker-compose.yml`** - Docker Compose配置，支持一键部署、环境变量配置、资源限制、健康检查
-- **`docker-deploy.sh`** - Docker部署管理脚本，提供构建、启动、监控、日志查看等功能（Linux/macOS）
-- **`docker-deploy.bat`** - Windows版本部署脚本，支持Windows环境一键部署
-- **`entrypoint.sh`** - Docker容器启动脚本，处理环境初始化和服务启动
-- **`nginx/nginx.conf`** - Nginx反向代理配置，支持负载均衡、SSL终端、WebSocket代理
-- **`requirements.txt`** - Python依赖包列表，精简版本无冗余依赖，按功能分类组织，包含详细说明
-- **`.gitignore`** - Git忽略文件配置，完整覆盖Python、Docker、前端等开发文件
-- **`.dockerignore`** - Docker构建忽略文件，优化构建上下文大小和构建速度
-- **`Dockerfile-cn`** - 国内优化版Docker镜像构建文件，使用国内镜像源加速构建
-- **`docker-compose-cn.yml`** - 国内优化版Docker Compose配置文件
+- **`Dockerfile`** - Docker镜像构建文件，基于Python 3.11-slim，包含Playwright浏览器、系统依赖，支持无头模式运行，优化构建层级
+- **`Dockerfile-cn`** - 国内优化版Docker镜像构建文件，使用国内镜像源加速构建，适合国内网络环境
+- **`docker-compose.yml`** - Docker Compose配置，支持一键部署、完整环境变量配置、资源限制、健康检查、可选Nginx代理
+- **`docker-compose-cn.yml`** - 国内优化版Docker Compose配置文件，使用国内镜像源
+- **`docker-deploy.sh`** - Docker部署管理脚本，提供构建、启动、停止、重启、监控、日志查看等功能（Linux/macOS）
+- **`docker-deploy.bat`** - Windows版本部署脚本，支持Windows环境一键部署和管理
+- **`entrypoint.sh`** - Docker容器启动脚本，处理环境初始化、目录创建、权限设置和服务启动
+- **`nginx/nginx.conf`** - Nginx反向代理配置，支持负载均衡、SSL终端、WebSocket代理、静态文件服务
+- **`requirements.txt`** - Python依赖包列表，精简版本无内置模块，按功能分类组织，包含详细版本说明和安装指南
+- **`.gitignore`** - Git忽略文件配置，完整覆盖Python、Docker、前端、测试、临时文件等，支持项目特定文件类型
+- **`.dockerignore`** - Docker构建忽略文件，优化构建上下文大小和构建速度，排除不必要的文件和目录
 
 ## 🏗️ 详细技术架构
 
@@ -691,8 +717,12 @@ powershell -ExecutionPolicy Bypass -File docker-deploy.bat
 
 欢迎加入我们的技术交流群，获取实时帮助和最新更新：
 
+#### 闲鱼官方闲置群
+<img src="static/xianyu-group.png" alt="闲鱼官方闲置群二维码" width="200">
+
 #### 微信交流群
 <img src="static/wechat-group.png" alt="微信群二维码" width="200">
+<img src="static/wechat-group1.png" alt="微信群二维码" width="200">
 
 #### QQ交流群
 <img src="static/qq-group.png" alt="QQ群二维码" width="200">
@@ -773,9 +803,88 @@ powershell -ExecutionPolicy Bypass -File docker-deploy.bat
 
 ---
 
+## 📊 项目统计
+
+- **代码行数**: 10,000+ 行
+- **功能模块**: 15+ 个核心模块
+- **API接口**: 50+ 个RESTful接口
+- **数据库表**: 20+ 个数据表
+- **支持平台**: Windows/Linux/macOS
+- **部署方式**: Docker一键部署
+- **开发周期**: 持续更新维护
+
+## 🎯 项目优势
+
+### 技术优势
+- ✅ **现代化架构**: 基于FastAPI + Python 3.11+异步编程
+- ✅ **容器化部署**: Docker + Docker Compose一键部署
+- ✅ **多用户系统**: 完整的用户注册、登录、权限管理
+- ✅ **数据隔离**: 每个用户的数据完全独立，安全可靠
+- ✅ **实时通信**: WebSocket实时消息处理和状态监控
+
+### 功能优势
+- ✅ **智能回复**: 关键词匹配 + AI智能回复 + 优先级策略
+- ✅ **自动发货**: 多种发货方式，支持规格匹配和延时发货
+- ✅ **商品管理**: 自动收集商品信息，支持批量操作
+- ✅ **订单管理**: 订单详情获取，支持自动确认发货
+- ✅ **安全保护**: 多层加密，防重复机制，异常恢复
+
+### 运维优势
+- ✅ **日志系统**: 完整的日志记录和实时查看
+- ✅ **监控告警**: 账号状态监控和异常告警
+- ✅ **数据备份**: 自动数据备份和恢复机制
+- ✅ **性能优化**: 异步处理，高并发支持
+- ✅ **易于维护**: 模块化设计，代码结构清晰
+- ✅ **使用统计**: 匿名使用统计，帮助改进产品
+
+## 📊 用户统计说明
+
+### 统计目的
+为了了解有多少人在使用这个系统，系统会发送匿名的用户统计信息。
+
+### 收集的信息
+- **匿名ID**: 基于机器特征生成的唯一标识符（重启不变）
+- **操作系统**: 系统类型（如Windows、Linux）
+- **版本信息**: 软件版本号
+
+### 隐私保护
+- ✅ **完全匿名**: 不收集任何个人身份信息
+- ✅ **数据安全**: 不收集账号、密码、关键词等敏感信息
+- ✅ **本地优先**: 所有业务数据仅存储在本地
+- ✅ **持久化ID**: Docker重建时ID不变（保存在数据库中）
+
+### 查看统计信息
+
+#### 方式1: Python统计服务器
+```bash
+# 部署Python统计服务器
+python simple_stats_server.py
+
+# 访问统计服务器查看用户数量
+curl http://localhost:8081/stats
+```
+
+#### 方式2: PHP统计服务器
+```bash
+# 将index.php部署到Web服务器（如Apache/Nginx）
+# 访问统计接口
+curl http://localhost/php/stats
+
+# 测试统计功能
+python test_php_stats.py
+```
+
+**PHP统计服务器特点**:
+- 数据保存在`user_stats.txt`文件中
+- 支持用户数据更新（anonymous_id作为key）
+- 自动生成统计摘要
+- 记录操作日志到`stats.log`
+
+---
+
 🎉 **开始使用闲鱼自动回复系统，让您的闲鱼店铺管理更加智能高效！**
 
-**请记住：仅限学习使用，禁止商业用途！**
+**⚠️ 重要提醒：本项目仅供学习研究使用，严禁商业用途！**
 
 ## Star History
 
